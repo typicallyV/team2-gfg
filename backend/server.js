@@ -1,51 +1,86 @@
+ // server.js
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import session from "express-session";
-import connectDB from "./utils/connectDB.js";
 import connectMongoDBSession from "connect-mongodb-session";
-const MongoDBSession = connectMongoDBSession(session);
-import routes from './routes/routes.js'
-
-// Connect to the database
+import mongoose from "mongoose";
+import authRoutes from "./routes/authroutes.js";
+import connectDB from "./utils/connectDB.js";
 dotenv.config();
-connectDB();
 
-//what to put instead of local host
-//"mongodb+srv://<username>:<password>@cluster0.mongodb.net/session?retryWrites=true&w=majority",
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
+const MongoDBSession = connectMongoDBSession(session);
 
+// trust proxy when behind a reverse proxy (set in production)
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
- //store cookies in mongodb
+// Make sure FRONTEND_ORIGIN includes protocol + port, e.g. "http://localhost:5173" or your deployed URL
+app.use(
+  cors({
+    origin: process.env.FRONTEND_ORIGIN  ,
+    credentials: true, // allow cookies
+  })
+);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ----- Connect to MongoDB -----
+try {
+  await connectDB();
+} catch (err) {
+  console.error("Failed to start server due to DB error");
+  process.exit(1);
+}
+// ----- Session store -----
 const store = new MongoDBSession({
-  uri: "mongodb://localhost:27017/session",
-  collection: "mySessions",
+  uri: process.env.MONGO_URI,
+  collection: "sessions",
 });
 
-app.use(cors());
-app.use(express.json());
-app.set("view engine", "ejs");
-app.use(express.urlencoded({ extended: true }));
+// optional: handle store errors
+store.on("error", function (error) {
+  console.error("Session store error:", error);
+});
+
+ 
 
 app.use(
   session({
-    secret: "takes key as a string",
+    name: "sid",
+    secret: process.env.SESSION_SECRET || "change_me_now",
     resave: false,
     saveUninitialized: false,
-    store: store,
+    store,
+    cookie: {
+      httpOnly: true,
+      secure: false, // MUST be false for localhost
+      sameSite: 'lax', // MUST be 'lax' for localhost (not 'none')
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+      path: '/',
+    },
   })
 );
- 
-//routes 
-app.use('/test', routes);
 
-app.get('/', (req, res) => {
-    console.log(request);
-  return response.status(234).send('working...');
+// ----- Routes -----
+app.use("/api/auth", authRoutes);
 
+// health & session-check
+app.get("/", (req, res) => res.json({ ok: true }));
+app.get("/api/session-check", (req, res) => {
+  res.json({ authenticated: !!req.session?.isAuth, user: req.session?.user || null });
+});
+
+// simple error handler
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ message: "Server error" });
 });
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`Server listening on http://localhost:${PORT}`);
 });
