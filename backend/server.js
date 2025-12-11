@@ -18,7 +18,6 @@ if (process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
 }
 
-// Make sure FRONTEND_ORIGIN includes protocol + port, e.g. "http://localhost:5173" or your deployed URL
 app.use(
   cors({
     origin: process.env.FRONTEND_ORIGIN  ,
