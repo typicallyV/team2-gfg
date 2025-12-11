@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "express": "^5.2.1",
+    "module": "^2.0.0",
+    "node": "^20.19.6"
+  }
+}
